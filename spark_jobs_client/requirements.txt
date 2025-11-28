@@ -1,0 +1,9 @@
+# ~/PROJECTS/spark_jobs_client/requirements.txt
+pyspark
+httpx
+PyYAML
+boto3
+openpyxl
+pycountry
+pandas
+numpy

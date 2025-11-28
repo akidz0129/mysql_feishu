@@ -1,0 +1,37 @@
+# environment.yml
+name: fastapi_env # Conda 环境的名称
+channels:
+  - conda-forge # 优先从 conda-forge 获取包，更全面
+  - defaults
+dependencies:
+  - python=3.10    # 与你的应用兼容的Python版本
+  - pip
+  # FastAPI 和 Web 服务相关
+  - fastapi==0.115.12 
+  - uvicorn==0.34.3   
+  - Jinja2==3.1.6     
+  - lxml==5.4.0       
+  - openpyxl==3.1.5   
+  - pandas==2.3.0     
+  - PyMySQL==1.1.1    
+  - aiomysql==0.2.0   
+  - pyspark==3.5.1    # 与你的Spark版本匹配
+  - boto3==1.39.4     # 用于MinIO操作
+  # 验证和序列化
+  - pydantic==2.10.4 
+  - pydantic-settings==2.7.0 
+  # 安全
+  - python-multipart>=0.0.18 
+  # python-jose 和 passlib 及其 extras 通常通过 pip 安装更稳定，或者检查 conda-forge 是否提供完整包
+  - google-auth==2.40.3     
+  - google-genai==1.21.1    
+
+  - pip:
+      # 对于带有 extra 的包，如 python-jose[cryptography] 和 passlib[bcrypt]，
+      # 通常在 Conda 频道中很难找到包含 extra 的完整包。
+      # 因此，将它们放在 pip: 部分是确保正确安装的最佳方式。
+      - Pillow==10.1.0
+      - minio
+      - python-jose[cryptography]==3.3.0
+      - passlib[bcrypt]==1.7.4
+

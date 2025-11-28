@@ -1,0 +1,4 @@
+# ~/PROJECTS/dingtalk_service/requirements.txt
+dingtalk-stream
+httpx
+PyYAML

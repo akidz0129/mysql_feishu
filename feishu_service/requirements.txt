@@ -1,0 +1,6 @@
+# ~/PROJECTS/feishu_service/requirements.txt
+lark-oapi
+httpx
+PyYAML
+openpyxl
+pandas

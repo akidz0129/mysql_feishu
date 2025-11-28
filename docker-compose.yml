@@ -1,0 +1,367 @@
+
+services:
+  fastapi-app:
+    build: 
+      context: ./fastapi_app
+      dockerfile: Dockerfile
+    container_name: fastapi-app
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./fastapi_app/app:/app/app
+      - ./fastapi_app/templates:/app/templates
+      - ${LOCAL_PATH}:${CONTAINER_ROOT_PATH}
+      - ./cf_tunnel/cloudflared:/usr/local/bin/cloudflared:ro
+    environment:
+      MYSQL_HOST: mysql-db
+      MYSQL_USER: ${MYSQL_USER}        
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_PORT: ${MYSQL_PORT}       
+      GEMINI_API_KEY: ${GEMINI_API_KEY} 
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      SPARK_MASTER: spark://spark-master:7077
+      MYSQL_ICEBERG_CATALOG_USER: ${MYSQL_ICEBERG_CATALOG_USER}
+      MYSQL_ICEBERG_CATALOG_PASSWORD: ${MYSQL_ICEBERG_CATALOG_PASSWORD}
+
+      LOCAL_ROOT_PATH: ${LOCAL_ROOT_PATH}
+      CONTAINER_ROOT_PATH: ${CONTAINER_ROOT_PATH}
+      FASTAPI_BUCKET_NAME: ${FASTAPI_BUCKET_NAME}
+      SAVE_ROOT_PREFIX: ${SAVE_ROOT_PREFIX}
+
+      HTTP_PROXY: http://mihomo:1080
+      HTTPS_PROXY: http://mihomo:1080
+      NO_PROXY: localhost,127.0.0.1,mysql-db,minio,spark-master,mihomo
+      CF_BIN_PATH: /usr/local/bin/cloudflared # 二进制文件路径
+      N8N_INTERNAL_URL: http://n8n:5678 # n8n 容器的内部地址
+    depends_on:
+      mysql-db:
+        condition: service_healthy # 确保 mysql-db 启动并健康
+      minio: 
+        condition: service_healthy # 确保 minio 启动并健康
+      spark-master:
+        condition: service_started # 或者 service_healthy 如果 Spark 有健康检查
+      mihomo:
+        condition: service_started
+
+    networks:
+      - backend_network
+
+  gcloud-cli:
+    # 使用官方镜像，这是解决构建网络问题的最佳方式
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:stable
+    container_name: gcloud-cli
+    
+    # 🌟 关键：挂载卷以持久化 GCLOUD 认证信息和配置
+    volumes:
+      # 宿主机路径:容器内路径
+      - ./gcloud_config:/root/.config/gcloud
+      
+    # # 🌟 代理和网络配置
+    environment:
+      # 🌟 运行时使用 localhost
+      # HTTP_PROXY: http://127.0.0.0.1:7890
+      # HTTPS_PROXY: http://127.0.0.0.1:7890
+      # 确保内部服务不走代理
+      NO_PROXY: localhost,127.0.0.1,mysql-db,minio,spark-master,mihomo
+      HTTP_PROXY: http://mihomo:1080
+      HTTPS_PROXY: http://mihomo:1080
+    command: tail -f /dev/null       
+    networks:
+      - backend_network # 必须保留，以便访问 MinIO 等内部服务
+  mihomo:
+    image: metacubex/mihomo
+    container_name: mihomo
+    restart: always
+    ports:
+      - 1080:1080
+      - 1081:1081
+      - 9090:9090
+    volumes:
+      - ./mihomo/config/config.yaml:/root/.config/mihomo/config.yaml 
+    networks:
+      - backend_network
+
+  metacubexd-ui:
+    image: 'mrxianyu/metacubexd-ui:latest'
+    restart: unless-stopped
+    container_name: metacubexd-ui
+    # 暴露 Web UI 的端口给宿主机
+    ports:
+      - '8088:80' # 推荐使用非 80 端口，例如 8080，避免权限冲突
+    environment:
+      # 这里使用 mihomo 服务的名字，通过 Docker 内部网络访问 9090 端口
+      - CONTROLLER_URL=http://mihomo:9090 
+    networks:
+      - backend_network
+  mysql-db:
+    image: mysql:latest
+    container_name: mysql-db
+    restart: always
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql_init:/docker-entrypoint-initdb.d 
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
+      interval: 10s 
+      timeout: 5s   
+      retries: 5    
+      start_period: 30s 
+    networks:
+      - backend_network
+
+
+  minio:
+    image: minio/minio
+    container_name: minio
+    restart: always
+    ports:
+      - "9000:9000" # MinIO API 端口
+      - "9001:9001" # MinIO Console (Web UI) 端口
+    volumes:
+      - ./minio_data:/data
+      - ./minio_config:/root/.minio      # 保存 IAM 用户配置等
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER} # 访问 MinIO 的用户名
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD} # 访问 MinIO 的密码
+    command: server --console-address ":9001" /data
+    healthcheck: 
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s   # 更频繁地检查
+      timeout: 5s    # 更短的超时时间
+      retries: 5     # 增加重试次数以应对瞬时问题
+      start_period: 10s # 增加启动期，给MinIO足够时间启动，在此期间失败不会计入retries
+    networks:
+      - backend_network
+    
+
+  dingtalk-service:
+    build: 
+      context: ./dingtalk_service
+      dockerfile: Dockerfile
+    container_name: dingtalk-service
+    restart: always
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./dingtalk_service/app:/app/app
+      # 将宿主机上的 ./config 目录挂载到容器内的 /app/config 目录
+      - ./config:/app/config 
+    environment:
+      # 通过环境变量告诉应用配置文件在容器内的路径
+      CONFIG_FILE_PATH: /app/config/mappings.yml
+      DINGTALK_APP_ID: ${DINGTALK_APP_ID}
+      DINGTALK_APP_SECRET: ${DINGTALK_APP_SECRET}
+    depends_on:
+      - fastapi-app
+    networks:
+      - backend_network
+
+  feishu-service:
+    build: 
+      context: ./feishu_service
+      dockerfile: Dockerfile
+    container_name: feishu-service
+    restart: always
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./feishu_service/app:/app/app
+      - ./config:/app/config 
+    environment:
+      # 通过环境变量告诉应用配置文件在容器内的路径
+      CONFIG_FILE_PATH: /app/config/mappings.yml
+      FEISHU_APP_ID: ${FEISHU_APP_ID}
+      FEISHU_APP_SECRET: ${FEISHU_APP_SECRET}
+      FEISHU_FOLDER_TOKEN: ${FEISHU_FOLDER_TOKEN}
+    depends_on:
+      - fastapi-app
+    networks:
+      - backend_network
+
+  spark-master:
+    build:
+      context: ./spark_jobs_client
+      dockerfile: Dockerfile
+    container_name: spark-master
+    restart: always
+    ports:
+      - "8080:8080" # Spark Master Web UI
+      - "7077:7077" # Spark Master 默认端口
+    volumes:
+      - ./config/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+    environment:
+      # 禁用 Spark 内部 RPC（远程过程调用）的身份验证 生产环境中，出于安全考虑，强烈建议启用并配置
+      SPARK_RPC_AUTHENTICATION_ENABLED: no
+      # 禁用 Spark 内部 RPC 通信的加密 生产环境中，出于安全考虑，强烈建议启用并配置
+      SPARK_RPC_ENCRYPTION_ENABLED: no
+      # 禁用 Spark 临时存储的加密 生产环境中，出于安全考虑，强烈建议启用并配置
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: no
+      SPARK_MASTER_PORT: 7077
+      SPARK_MASTER_WEBUI_PORT: 8080
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      MYSQL_ICEBERG_CATALOG_USER: ${MYSQL_ICEBERG_CATALOG_USER}
+      MYSQL_ICEBERG_CATALOG_PASSWORD: ${MYSQL_ICEBERG_CATALOG_PASSWORD}
+      MYSQL_ICEBERG_CATALOG_DB: ${MYSQL_ICEBERG_CATALOG_DB}
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    depends_on:
+      minio:
+        condition: service_healthy
+      mysql-db:
+        condition: service_healthy
+    networks:
+      - backend_network
+
+  spark-worker:
+    build:
+      context: ./spark_jobs_client
+      dockerfile: Dockerfile
+    container_name: spark-worker
+    restart: always
+    volumes:
+      - ./config/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+    environment:
+      SPARK_RPC_HOST: spark-worker
+      SPARK_LOCAL_IP: spark-worker
+      SPARK_DRIVER_HOST: spark-worker # 确保驱动程序绑定到这个地址
+      SPARK_WORKER_CORES: 2   # 给Worker分配的核心数
+      SPARK_WORKER_MEMORY: 2g # 给Worker分配的内存
+      SPARK_RPC_AUTHENTICATION_ENABLED: no # 与Master保持一致
+      SPARK_RPC_ENCRYPTION_ENABLED: no # 与Master保持一致
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: no # 与Master保持一致
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      MYSQL_ICEBERG_CATALOG_USER: ${MYSQL_ICEBERG_CATALOG_USER}
+      MYSQL_ICEBERG_CATALOG_PASSWORD: ${MYSQL_ICEBERG_CATALOG_PASSWORD}
+      MYSQL_ICEBERG_CATALOG_DB: ${MYSQL_ICEBERG_CATALOG_DB}
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    depends_on:
+      - spark-master
+    networks:
+      - backend_network
+
+  # 一次性初始化服务：负责创建 Iceberg 表等一次性设置
+  table-initializer:
+    build:
+      context: ./spark_jobs_client
+      dockerfile: Dockerfile
+    container_name: table-initializer
+    volumes:
+      - ./spark_jobs_client/app:/app/app
+      - ./config/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf # 挂载 spark-defaults.conf
+      - ./jars:/app/external_jars # 挂载额外的JAR包
+      - init_marker:/shared # 共享卷，用于标记初始化状态
+    environment:
+      # 将 .env 文件中的敏感信息作为环境变量传递给容器
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      MYSQL_ICEBERG_CATALOG_USER: ${MYSQL_ICEBERG_CATALOG_USER}
+      MYSQL_ICEBERG_CATALOG_PASSWORD: ${MYSQL_ICEBERG_CATALOG_PASSWORD}
+      MYSQL_ICEBERG_CATALOG_DB: ${MYSQL_ICEBERG_CATALOG_DB}
+    command: |
+      bash -c "
+        if [ -f /shared/tables_created ]; then
+          echo '✅ Tables already initialized, exiting...'
+          exit 0
+        fi
+         echo '⏳ Waiting for MinIO to be ready...'
+        until curl -f http://minio:9000/minio/health/live > /dev/null 2>&1; do
+          echo 'MinIO is not ready yet, waiting...'
+          sleep 5
+        done
+        echo '✅ MinIO is ready!'
+        # --- 第一次 Spark 提交：创建 Iceberg 表 ---
+        echo '🔧 Initializing tables...'
+        /opt/spark/bin/spark-submit --master spark://spark-master:7077 --properties-file /opt/spark/conf/spark-defaults.conf --jars /app/external_jars/iceberg-spark-runtime-3.5_2.12-1.9.2.jar,/app/external_jars/mysql-connector-j-9.3.0.jar,/app/external_jars/hadoop-aws-3.4.1.jar,/app/external_jars/bundle-2.32.4.jar /app/app/create_table.py 
+        # 标记初始化过程完成
+        touch /shared/tables_created 
+        echo '✅ Initialization complete!'
+      "
+
+    restart: "no" # 任务完成后容器退出，不重启
+    depends_on:
+      spark-master:
+        condition: service_started
+      minio:
+        condition: service_healthy
+      mysql-db:
+        condition: service_healthy
+    networks:
+      - backend_network
+
+      
+  # Spark 任务提交客户端：一个常驻的容器，用于手动或通过脚本提交Spark任务
+  spark-submit-client:
+    build:
+      context: ./spark_jobs_client
+      dockerfile: Dockerfile
+    container_name: spark-submit-client
+    restart: unless-stopped
+    volumes:
+      - ./spark_jobs_client/app:/app/app
+      - ./config/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf # 挂载 spark-defaults.conf
+      - ./jars:/app/external_jars # 挂载额外的JAR包
+      - init_marker:/shared # 共享卷，可以用于检查初始化状态（可选，但通常用不到，因为有depends_on）
+    environment:
+      # 同样将敏感信息作为环境变量传递
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      MYSQL_ICEBERG_CATALOG_USER: ${MYSQL_ICEBERG_CATALOG_USER}
+      MYSQL_ICEBERG_CATALOG_PASSWORD: ${MYSQL_ICEBERG_CATALOG_PASSWORD}
+      MYSQL_ICEBERG_CATALOG_DB: ${MYSQL_ICEBERG_CATALOG_DB}
+    command: tail -f /dev/null # 保持容器持续运行，作为提交任务的入口
+    depends_on:
+      - table-initializer # 确保 Iceberg 表初始化完成后再启动此服务
+    networks:
+      - backend_network
+  n8n:
+    image: n8nio/n8n
+    container_name: n8n
+    restart: always
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    environment:
+      N8N_HOST: 0.0.0.0
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      N8N_SECURE_COOKIE: "false"
+      
+      HTTP_PROXY: http://mihomo:1080
+      HTTPS_PROXY: http://mihomo:1080
+      NO_PROXY: localhost,127.0.0.1,mysql-db,minio,spark-master,mihomo,192.168.5.219,fastapi-app
+      N8N_USER_MANAGEMENT_ACTIVE: true
+      N8N_BASIC_AUTH_ACTIVE: true
+      N8N_EDITOR_BASE_URL: http://脚急1:5678
+      # N8N_S3_FORCE_PATH_STYLE: true
+      # N8N_S3_ENDPOINT: http://minio:9000
+      # N8N_S3_REGION: us-east-1
+      N8N_S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+      N8N_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+    networks:
+      - backend_network
+
+
+
+volumes:
+  mysql_data:
+  minio_data:
+  init_marker:
+  n8n_data:
+    external: true
+
+networks:
+  backend_network:
+    driver: bridge

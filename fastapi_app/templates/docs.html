@@ -1,0 +1,85 @@
+{% extends "layout.html" %}
+{% block body %}
+<h1>My API Documentation</h1>
+<table class="">
+  <thead>
+    <tr>
+      <th class="">Name</th>
+      <th class="">Description</th>
+      <th class="">Type</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="">id</td>
+      <td>
+        <p>The identifier for this resource.</p>
+      </td>
+      <td>
+        <i>integer</i>
+      </td>
+    </tr>
+    <tr>
+      <td class="">name</td>
+      <td>
+        <p>The name for this resource.</p>
+      </td>
+      <td>
+        <i>string</i>
+      </td>
+    </tr>
+
+  </tbody>
+</table>
+
+<h2>目录</h2>
+<ul>
+    <li><a href="#orders">GET /orders/orders</a></li>
+    <li><a href="#orders_report">POST /orders/report</a></li>
+    <li><a href="#a">GET /a</a></li>
+    <li><a href="#b">GET /b</a></li>
+</ul>
+
+<hr>
+
+<h2 id="orders">GET /orders/orders</h2>
+<p>获取当前的总订单数据</p>
+<pre>{"data":[[1,"B0D1FRQX8Q",5,3924,36]}</pre>
+
+<h2 id="orders_report">POST /orders/report</h2>
+<p>获取特定日期订单数据</p>
+<pre>2025-11-07日报结果:
+- [40.86, '25110763DNBRSH']
+- [72.93, '2511075HKV08XF']
+- [26.81, '2511075DCXSGWY']
+- [21.93, '2511076NNDX2M3']
+- [8.64, '2511075MU7BT1D']
+</pre>
+
+<h2 id="a">GET /a</h2>
+<p>获取某个客户的订单记录。</p>
+<p><strong>参数:</strong></p>
+<ul>
+    <li><code>customer_id</code> (string): 客户唯一 ID（必填）</li>
+</ul>
+<pre>{
+  "customer_id": "12345",
+  "orders": [
+    {"order_id": 1001, "amount": 320.5, "date": "2024-06-01"}
+  ]
+}</pre>
+
+<h2 id="b">GET /b</h2>
+<p>获取某个商品分类的销售趋势。</p>
+<p><strong>参数:</strong></p>
+<ul>
+    <li><code>category</code> (string): 商品分类，如 "fruit"</li>
+</ul>
+<pre>{
+  "category": "fruit",
+  "trend": [
+    {"date": "2024-06-01", "sales": 200}
+  ]
+}</pre>
+
+{% endblock %}

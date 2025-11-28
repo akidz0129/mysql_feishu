@@ -1,0 +1,18 @@
+{% extends "layout.html" %}
+
+{% block body %}
+
+hello,{{ name }}
+<form action="/search" method="post">
+<input name="name" placeholder="please input……">
+<button>submit</button>
+</form>
+<form action="/docs" method="get">
+<a href="/docs_a">docs</a>
+</form>
+<form action="/gemini" method="post">
+<input name="question" placeholder="please input……">
+<button>submit</button>
+</form>
+{{ data }}
+{% endblock %}

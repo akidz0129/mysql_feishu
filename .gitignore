@@ -1,0 +1,74 @@
+# ------------------------------
+# Python / FastAPI
+# ------------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+env/
+*.log
+*.tmp
+*.db
+
+# ------------------------------
+# Conda
+# ------------------------------
+.conda/
+.mamba/
+envs/
+pkgs/
+
+# ------------------------------
+# Local environment files
+# ------------------------------
+.env
+*.env
+
+# ------------------------------
+# IDE / Editor
+# ------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+
+# ------------------------------
+# OS Files
+# ------------------------------
+.DS_Store
+Thumbs.db
+
+# ------------------------------
+# Your Project Specific Ignore
+# ------------------------------
+
+# 1. MySQL 数据目录（非常庞大 + 含大量权限文件）
+mysql_data/
+
+# 2. MinIO 的证书目录（敏感）
+minio_config/
+minio_data/
+
+# 3. gcloud 配置（包含 access_tokens.db，绝对不能上传）
+gcloud_config/
+
+# 4. 如果 fastapi_app 里面还有自己的 .git（避免嵌套仓库）
+fastapi_app/.git
+
+# 5. Docker 生成的内容
+docker-data/
+docker-volume/
+docker-compose.override.yml
+
+# ------------------------------
+# Others
+# ------------------------------
+# 任何你不确定是否应该提交的二进制或缓存
+*.bak
+*.old
+# Ignore large folders
+jars/
+
+wget-log
+wget-log.1
